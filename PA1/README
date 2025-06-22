@@ -3,17 +3,16 @@ CS4422 Web Crawler and Data Analysis
 This project is a web crawling and data analysis tool developed for CS4422 coursework. It uses Scrapy to crawl webpages from the Kennesaw State University (KSU) domain, extracting useful information such as email addresses and webpage content. The extracted data is then analyzed to compute statistics and visualize word frequency distributions.
 
 Features:
+
 1. Web Crawler:
   - Built with Scrapy to crawl KSU webpages.
   - Extracts emails, page titles, and body content.
 
 2. Data Analysis:
-
   - Calculates average document length and email statistics.
   - Analyzes word frequencies before and after removing stopwords, numbers, and punctuation.
 
 3. Visualization:
-
   - Generates word frequency plots, including:
   - Word distribution (line or bar graph).
   - Zipf-like distribution (log-log scale).
