@@ -1,2 +1,40 @@
-PA1 - Web Crawler and Text Preprocessing
-- Libaries Used: Scrapy, JSON, Tabulate, nltk, matplotlib
+CS4422 Web Crawler and Data Analysis
+
+This project is a web crawling and data analysis tool developed for CS4422 coursework. It uses Scrapy to crawl webpages from the Kennesaw State University (KSU) domain, extracting useful information such as email addresses and webpage content. The extracted data is then analyzed to compute statistics and visualize word frequency distributions.
+
+Features:
+1. Web Crawler:
+  - Built with Scrapy to crawl KSU webpages.
+  - Extracts emails, page titles, and body content.
+
+2. Data Analysis:
+
+  - Calculates average document length and email statistics.
+  - Analyzes word frequencies before and after removing stopwords, numbers, and punctuation.
+
+3. Visualization:
+
+  - Generates word frequency plots, including:
+  - Word distribution (line or bar graph).
+  - Zipf-like distribution (log-log scale).
+
+4. Command-Line Interface (CLI):
+  - Allows users to choose the type of plot to view directly from the terminal.
+
+File Structure:
+  - ksuWebCrawler/: Contains the Scrapy spider and configuration files.
+  - analysis/: Includes scripts for data analysis (test_stats.py, word_freq.py) and the JSON output (ksu1000.json).
+
+How to Use:
+  - Run the Web Crawler: scrapy crawl ksuWebSpider -o analysis/ksu1000.json
+
+Analyze Data:
+  - Run test_stats.py to compute email and document statistics: python3 analysis/test_stats.py analysis/ksu1000.json
+  - Run word_freq.py to analyze word frequencies and visualize distributions: python3 analysis/word_freq.py
+
+Requirements:
+  - Python 3.13
+  - Scrapy
+  - Matplotlib
+  - NLTK
+  - Tabulate
