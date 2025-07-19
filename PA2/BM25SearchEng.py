@@ -1,12 +1,7 @@
-"""
-Simple indexer and search engine built on an inverted-index and the BM25 ranking algorithm.
-"""
 import os
-from collections import defaultdict, Counter
 import pickle
 import math
-import operator
-
+from collections import defaultdict, Counter
 from tqdm import tqdm
 from nltk import pos_tag
 from nltk.tokenize import RegexpTokenizer
@@ -14,48 +9,87 @@ from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from datasets import load_dataset
 
-
 class Indexer:
     dbfile = "./ir.idx"  # You need to store index file on your disk so that you don't need to
-                         # re-index when running the program again.
-                         # You can name this file however you like. (e.g., index.pkl)
+                         # re-index when running the program again. You can name this file however
+                         # you like. (e.g., index.pkl)
 
     def __init__(self):
         # TODO. You will need to create appropriate data structures for the following elements
-        self.tok2idx = None                       # map (token to id)
-        self.idx2tok = None                       # map (id to token)
-        self.postings_lists = None                # postings for each word
-        self.docs = []                            # encoded document list
-        self.raw_ds = None                        # raw documents for result presentation
-        self.corpus_stats = { 'avgdl': 0 }        # any corpus-level statistics
-        self.stopwords = stopwords.words('english')
+        self.tok2idx = {}                       # map (token to id)
+        self.idx2tok = {}                       # map (id to token)
+        self.postings_lists = defaultdict(dict) # postings for each word: term_id -> {doc_id: freq}
+        self.docs = []                          # list of tokenized docs
+        self.raw_ds = None                      # raw documents for result presentation
+        self.corpus_stats = {'avgdl': 0}        # any corpus-level statistics
+        self.stopwords = set(stopwords.words('english'))
+        self.tokenizer = RegexpTokenizer(r"\w+")
+        self.lemmatizer = WordNetLemmatizer()
 
-        if os.path.exists(dbfile):
+        if os.path.exists(self.dbfile):
             # TODO. If these exists a saved corpus index file, load it.
             # (You may use pickle to save and load a python object.)
-            pass
+            with open(self.dbfile, 'rb') as f:
+                obj = pickle.load(f)
+            self.tok2idx = obj['tok2idx']
+            self.idx2tok = obj['idx2tok']
+            self.postings_lists = obj['postings_lists']
+            self.docs = obj['docs']
+            self.raw_ds = obj['raw_ds']
+            self.corpus_stats = obj['corpus_stats']
+            print(f"Loaded index from {self.dbfile}")
         else:
             # TODO. Load CNN/DailyMail dataset, preprocess and create postings lists.
             ds = load_dataset("cnn_dailymail", '3.0.0', split="test")
             self.raw_ds = ds['article']
             self.clean_text(self.raw_ds)
             self.create_postings_lists()
+            with open(self.dbfile, 'wb') as f:
+                pickle.dump({
+                    'tok2idx': self.tok2idx,
+                    'idx2tok': self.idx2tok,
+                    'postings_lists': self.postings_lists,
+                    'docs': self.docs,
+                    'raw_ds': self.raw_ds,
+                    'corpus_stats': self.corpus_stats
+                }, f)
+            print(f"Index saved to {self.dbfile}")
 
     def clean_text(self, lst_text, query=False):
         # TODO. this function will run in two modes: indexing and query mode.
         # TODO. run simple whitespace-based tokenizer (e.g., RegexpTokenizer)
         # TODO. run lemmatizer (e.g., WordNetLemmatizer)
         # TODO. read documents one by one and process
-        for l in lst_text:
-            # TODO. complete this part
-            pass
+        cleaned = []
+        for text in lst_text:
+            tokens = []
+            for tok in self.tokenizer.tokenize(text.lower()):
+                if tok in self.stopwords:
+                    continue
+                lemma = self.lemmatizer.lemmatize(tok)
+                tokens.append(lemma)
+            cleaned.append(tokens)
+        if query:
+            return cleaned[0] if cleaned else []
+        self.docs = cleaned
+        total_len = sum(len(d) for d in self.docs)
+        self.corpus_stats['avgdl'] = total_len / len(self.docs)
 
     def create_postings_lists(self):
         # TODO. This creates postings lists of your corpus
         # TODO. While indexing compute avgdl and document frequencies of your vocabulary
         # TODO. Save it, so you don't need to do this again in the next runs.
         # Save
-
+        for doc_id, tokens in enumerate(tqdm(self.docs, desc='Building postings')):
+            freqs = Counter(tokens)
+            for tok, freq in freqs.items():
+                if tok not in self.tok2idx:
+                    term_id = len(self.tok2idx)
+                    self.tok2idx[tok] = term_id
+                    self.idx2tok[term_id] = tok
+                else:
+                    term_id = self.tok2idx[tok]
+                self.postings_lists[term_id][doc_id] = freq
 
 class SearchAgent:
     k1 = 1.5                # BM25 parameter k1 for tf saturation
@@ -64,6 +98,8 @@ class SearchAgent:
     def __init__(self, indexer):
         # TODO. set necessary parameters
         self.i = indexer
+        self.N = len(self.i.docs)
+        self.avgdl = self.i.corpus_stats['avgdl']
 
     def query(self, q_str):
         # TODO. This is take a query string from a user, run the same clean_text process,
@@ -71,25 +107,50 @@ class SearchAgent:
         # TODO. Sort  the results by the scores in decsending order
         # TODO. Display the result
 
-        results = {}
-        if len(results) == 0:
+        # 1) clean & tokenize
+        q_tokens = self.i.clean_text([q_str], query=True)
+        q_term_ids = [self.i.tok2idx[t] for t in q_tokens if t in self.i.tok2idx]
+        if not q_term_ids:
+            print("No query terms matched the index.")
             return None
-        else:
-            self.display_results(results)
 
+        # 2) score with BM25
+        scores = defaultdict(float)
+        for tid in q_term_ids:
+            posting = self.i.postings_lists.get(tid, {})
+            n_t = len(posting)
+            idf = math.log((self.N - n_t + 0.5) / (n_t + 0.5) + 1)
+            for docid, f_td in posting.items():
+                dl = len(self.i.docs[docid])
+                tf = f_td
+                denom = tf + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
+                scores[docid] += idf * ((tf * (self.k1 + 1)) / denom)
 
-    def display_results(self, results):
+        if not scores:
+            print("No results found.")
+            return None
+
+        # 3) sort and display
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        self.display_results(ranked[:5])
+
+        # return None to suppress REPL echo
+        return None
+
+    def display_results(self, hits, snippet_len=200, score_fmt=".12f"):
         # Decode
         # TODO, the following is an example code, you can change however you would like.
-        for docid, score in results[:5]:  # print top 5 results
-            print(f'\nDocID: {docid}')
-            print(f'Score: {score}')
-            print('Article:')
-            print(self.i.raw_ds[docid])
-
-
+        for docid, score in hits[:5]:  # print top 5 results
+            print()
+            print(f"DocID: {docid}")
+            print(f"Score: {score:{score_fmt}}")
+            print("Article:")
+            text = self.i.raw_ds[docid].replace("\n", " ").strip()
+            snippet = text[:snippet_len] + ("..." if len(text) > snippet_len else "")
+            print(snippet)
 
 if __name__ == "__main__":
-    i = Indexer()           # instantiate an indexer
-    q = SearchAgent(i)      # document retriever
-    code.interact(local=dict(globals(), **locals())) # interactive shell
+    i = Indexer()
+    q = SearchAgent(i)
+    import code
+    code.interact(local=dict(globals(), **locals()))
