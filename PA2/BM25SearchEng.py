@@ -8,6 +8,7 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from datasets import load_dataset
+from rank_bm25 import BM25Okapi
 
 class Indexer:
     dbfile = "./ir.idx"  # You need to store index file on your disk so that you don't need to
@@ -102,39 +103,23 @@ class SearchAgent:
         self.avgdl = self.i.corpus_stats['avgdl']
 
     def query(self, q_str):
-        # TODO. This is take a query string from a user, run the same clean_text process,
-        # TODO. Calculate BM25 scores
-        # TODO. Sort  the results by the scores in decsending order
-        # TODO. Display the result
 
         # 1) clean & tokenize
         q_tokens = self.i.clean_text([q_str], query=True)
-        q_term_ids = [self.i.tok2idx[t] for t in q_tokens if t in self.i.tok2idx]
-        if not q_term_ids:
+        if not q_tokens:
             print("No query terms matched the index.")
             return None
 
-        # 2) score with BM25
-        scores = defaultdict(float)
-        for tid in q_term_ids:
-            posting = self.i.postings_lists.get(tid, {})
-            n_t = len(posting)
-            idf = math.log((self.N - n_t + 0.5) / (n_t + 0.5) + 1)
-            for docid, f_td in posting.items():
-                dl = len(self.i.docs[docid])
-                tf = f_td
-                denom = tf + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
-                scores[docid] += idf * ((tf * (self.k1 + 1)) / denom)
-
-        if not scores:
+        # 2) BM25 ranking using rank_bm25
+        bm25 = BM25Okapi(self.i.docs, k1=self.k1, b=self.b)
+        scores = bm25.get_scores(q_tokens)
+        if not any(scores):
             print("No results found.")
             return None
 
         # 3) sort and display
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
         self.display_results(ranked[:5])
-
-        # return None to suppress REPL echo
         return None
 
     def display_results(self, hits, snippet_len=200, score_fmt=".12f"):
